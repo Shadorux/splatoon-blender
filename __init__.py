@@ -652,6 +652,32 @@ def create_inkling(self, context, type="inkling_F"):
     var2.targets[0].bone_target = "Hif"
     driver2.driver.expression = "var * -1 + 1"
 
+    # Keep teeth visible and white when the Mouth_Joe/Mouth_Tooth bones are
+    # posed open.  The bundled texture can become transparent/tinted in newer
+    # Blender versions.
+    for tooth in armature.children:
+        if "Tooth" not in tooth.name or tooth.type != 'MESH':
+            continue
+        for slot, material in enumerate(list(tooth.data.materials)):
+            if not material or not material.node_tree:
+                continue
+            material = material.copy()
+            tooth.data.materials[slot] = material
+            for group in material.node_tree.nodes:
+                if group.type != 'GROUP' or not group.node_tree:
+                    continue
+                for node in group.node_tree.nodes:
+                    if node.type != 'BSDF_PRINCIPLED':
+                        continue
+                    base = node.inputs.get('Base Color')
+                    if base:
+                        for link in list(group.node_tree.links):
+                            if link.to_socket == base:
+                                group.node_tree.links.remove(link)
+                        base.default_value = (1, 1, 1, 1)
+                    if node.inputs.get('Roughness'):
+                        node.inputs['Roughness'].default_value = 0.4
+
     # Hair
     create_hair(self.hair, bpy.context.view_layer.objects.active, self, type)
     create_eyeblow(self.eyeblow, bpy.context.view_layer.objects.active, self, type)
@@ -866,19 +892,6 @@ def apply_player_customization(scene):
     return True
 
 
-class SPLATOON_OT_apply_customization(Operator):
-    """Apply color and appearance settings without rebuilding the player."""
-    bl_idname = "splatoon.apply_customization"
-    bl_label = "Apply Customization"
-    bl_description = "Apply colors, eye settings, and glow values to the current player"
-
-    def execute(self, context):
-        if not apply_player_customization(context.scene):
-            self.report({'WARNING'}, "Create a player first")
-            return {'CANCELLED'}
-        return {'FINISHED'}
-
-
 class SPLATOON_OT_create_player(Operator):
     """Create a player from the persistent Splatoon sidebar settings."""
     bl_idname = "splatoon.create_player"
@@ -914,7 +927,6 @@ class SPLATOON_PT_player(Panel):
         player_box.prop(scene, "splatoon_type", text="Type")
         player_box.prop(scene, "splatoon_name", text="Name")
         player_box.operator(SPLATOON_OT_create_player.bl_idname, icon='ADD')
-        player_box.operator(SPLATOON_OT_apply_customization.bl_idname, icon='MATERIAL')
 
         colors = layout.box()
         colors.label(text="Colors", icon='COLOR')
@@ -988,7 +1000,6 @@ def add_inkling_button(self, context):
 def register():
     bpy.utils.register_class(OBJECT_OT_add_inkling)
     bpy.utils.register_class(SPLATOON_OT_create_player)
-    bpy.utils.register_class(SPLATOON_OT_apply_customization)
     bpy.utils.register_class(SPLATOON_PT_player)
     _register_scene_properties()
     bpy.types.VIEW3D_MT_mesh_add.append(add_inkling_button)
@@ -1007,7 +1018,6 @@ def unregister():
     bpy.utils.unregister_class(OBJECT_OT_add_inkling)
     _unregister_scene_properties()
     bpy.utils.unregister_class(SPLATOON_PT_player)
-    bpy.utils.unregister_class(SPLATOON_OT_apply_customization)
     bpy.utils.unregister_class(SPLATOON_OT_create_player)
     bpy.types.VIEW3D_MT_mesh_add.remove(add_inkling_button)
 
