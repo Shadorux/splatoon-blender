@@ -12,24 +12,28 @@ bl_info = {
 
 import bpy
 import os
-from pathlib import Path
-from bpy.utils import resource_path
 
 def path_iterator(folder_path):
     for fp in os.listdir(folder_path):
-        if fp.endswith( tuple( bpy.path.extensions_image ) ):
+        if fp.lower().endswith(tuple(bpy.path.extensions_image)):
             yield fp
+
+def deselect_all_objects():
+    for obj in bpy.context.view_layer.objects:
+        obj.select_set(False)
 
 def import_item(self):
     path = str(os.path.split(self.filepath)[0]) + "/"
     file = str(os.path.split(self.filepath)[1])
     
-    bpy.ops.object.select_all(action='DESELECT')
+    if bpy.context.object is not None and bpy.context.object.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    deselect_all_objects()
     
     bpy.ops.import_scene.fbx(filepath = path+file)
     
     obj = bpy.context.view_layer.objects.active
-    obj.scale = (0.125,0.125,0.125)
+    obj.scale = (1,1,1)
     
     edited_body = False
     edited_tank = False
@@ -64,9 +68,9 @@ def import_item(self):
                 bpy.context.active_object.active_material.name = bpy.context.active_object.active_material.name[4:]
                 base_name = bpy.context.active_object.active_material.name
             if bpy.context.active_object.active_material.name.endswith(".001") or bpy.context.active_object.active_material.name.endswith(".002") or bpy.context.active_object.active_material.name.endswith(".003"):
-                bpy.context.active_object.active_material = bpy.data.materials[bpy.context.active_object.active_material.name[4:]]
+                bpy.context.active_object.active_material = bpy.data.materials[bpy.context.active_object.active_material.name[:-4]]
         
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         child.select_set(True)
         bpy.context.view_layer.objects.active = child
 
@@ -77,15 +81,13 @@ def import_item(self):
         
         separate = bpy.context.selected_objects
         to_keep = []
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         for obj in separate:
             if len(obj.data.vertices) <= 1:
-                bpy.ops.object.select_all(action='DESELECT')
-                obj.select_set(True)
-                bpy.ops.object.delete() 
+                bpy.data.objects.remove(obj, do_unlink=True)
             else:
                 to_keep.append(obj)
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         for obj in to_keep:
             obj.select_set(True)
             
@@ -156,12 +158,10 @@ def import_item(self):
                 if img_path.lower().startswith(base_name.lower()+"_"):
                     full_path = os.path.join( path, img_path )
                 
-                    bpy.ops.image.open(filepath = full_path)
-                        
                     img_node = nodes.new(type="ShaderNodeTexImage")
-                    img_node.image = bpy.data.images[img_path]
+                    img_node.image = bpy.data.images.load(full_path, check_existing=True)
             
-                    if img_path.endswith("tcl.png"):
+                    if img_path.lower().endswith("tcl.png"):
                         mix_node = nodes.new(type="ShaderNodeMix")
                         mix_node.data_type = "RGBA"
                     
@@ -173,51 +173,51 @@ def import_item(self):
                             links.new(alb_node.outputs[0], mix_node.inputs[6])
                             mix_node.inputs[7].default_value = inka_color
                 
-                    if img_path.endswith("alb.png"):
+                    if img_path.lower().endswith("alb.png"):
                         
                         alb_node = img_node
-                        links.new(img_node.outputs[1], bsdf.inputs[21])
+                        links.new(img_node.outputs[1], bsdf.inputs['Alpha'])
                     
                         if mix_node != None:
                             img_node.image.name = bpy.context.active_object.active_material.name + "_alb"
                             links.new(img_node.outputs[0], mix_node.inputs[6])
                             mix_node.inputs[7].default_value = inka_color
                             
-                    if img_path.endswith("mtl.png"):
+                    if img_path.lower().endswith("mtl.png"):
                         img_node.image.name = bpy.context.active_object.active_material.name + "_mtl"
                         img_node.image.colorspace_settings.name = 'Non-Color'
-                        links.new(img_node.outputs[0], bsdf.inputs[6])
+                        links.new(img_node.outputs[0], bsdf.inputs['Metallic'])
                             
-                    if img_path.endswith("spc.png"):
+                    if img_path.lower().endswith("spc.png"):
                         img_node.image.name = bpy.context.active_object.active_material.name + "_spc"
                         img_node.image.colorspace_settings.name = 'Non-Color'
-                        links.new(img_node.outputs[0], bsdf.inputs[7])
+                        links.new(img_node.outputs[0], bsdf.inputs['Specular IOR Level'])
                             
-                    if img_path.endswith("rgh.png"):
+                    if img_path.lower().endswith("rgh.png"):
                         img_node.image.name = bpy.context.active_object.active_material.name + "_rgh"
                         img_node.image.colorspace_settings.name = 'Non-Color'
-                        links.new(img_node.outputs[0], bsdf.inputs[9])
+                        links.new(img_node.outputs[0], bsdf.inputs['Roughness'])
                             
-                    if img_path.endswith("emm.png"):
+                    if img_path.lower().endswith("emm.png"):
                         img_node.image.name = bpy.context.active_object.active_material.name + "_emm"
                         img_node.image.colorspace_settings.name = 'Non-Color'
-                        links.new(img_node.outputs[0], bsdf.inputs[20])
+                        links.new(img_node.outputs[0], bsdf.inputs['Emission Color'])
                                 
-                    if img_path.endswith("opa.png"):
+                    if img_path.lower().endswith("opa.png"):
                         img_node.image.name = bpy.context.active_object.active_material.name + "_opa"
                         img_node.image.colorspace_settings.name = 'Non-Color'
-                        links.new(img_node.outputs[0], bsdf.inputs[21])
+                        links.new(img_node.outputs[0], bsdf.inputs['Alpha'])
                     
-                    if img_path.endswith("alp.png"):
+                    if img_path.lower().endswith("alp.png"):
                         img_node.image.name = bpy.context.active_object.active_material.name + "_alp"
                         img_node.image.colorspace_settings.name = 'Non-Color'
-                        links.new(img_node.outputs[0], bsdf.inputs[21])
+                        links.new(img_node.outputs[0], bsdf.inputs['Alpha'])
             
-                    if img_path.endswith("nrm.png"):
+                    if img_path.lower().endswith("nrm.png"):
                         img_node.image.name = bpy.context.active_object.active_material.name + "_nrm"
                         nrm_node = nodes.new("ShaderNodeNormalMap")
                         img_node.image.colorspace_settings.name = 'Non-Color'
-                        links.new(nrm_node.outputs[0], bsdf.inputs[22])
+                        links.new(nrm_node.outputs[0], bsdf.inputs['Normal'])
                         links.new(img_node.outputs[0], nrm_node.inputs[1])
                     
         

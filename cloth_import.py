@@ -11,19 +11,35 @@ bl_info = {
 }
 
 import bpy
+import bmesh
 import os
 from pathlib import Path
-from bpy.utils import resource_path
-
-USER = Path(resource_path('USER'))
-ADDON = "Splatoon Tools"
-
-srcPath = USER / "scripts" / "addons" / ADDON
+from mathutils import Matrix
+srcPath = Path(__file__).resolve().parent
 
 def path_iterator(folder_path):
     for fp in os.listdir(folder_path):
-        if fp.endswith( tuple( bpy.path.extensions_image ) ):
+        if fp.lower().endswith(tuple(bpy.path.extensions_image)):
             yield fp
+
+def deselect_all_objects():
+    """Deselect without relying on a context-sensitive Blender operator."""
+    for obj in bpy.context.view_layer.objects:
+        obj.select_set(False)
+
+def merge_vertex_groups_if_present(obj, group_a, group_b):
+    """Apply the legacy weight merge only for exports that contain both groups."""
+    if group_a not in obj.vertex_groups or group_b not in obj.vertex_groups:
+        return
+    modifier = obj.modifiers.new(name="Splatoon Weight Merge", type='VERTEX_WEIGHT_MIX')
+    modifier.mix_set = 'ALL'
+    modifier.mix_mode = 'ADD'
+    modifier.vertex_group_a = group_a
+    modifier.vertex_group_b = group_b
+    try:
+        bpy.ops.object.modifier_apply(modifier=modifier.name, report=True)
+    except RuntimeError:
+        obj.modifiers.remove(modifier)
 
 def import_clt(self):
     path = str(os.path.split(self.filepath)[0]) + "/"
@@ -38,11 +54,14 @@ def import_clt(self):
     else:
         self.report({'ERROR'}, 'Please, select the armature of your Inkling/Octoling before import clothes')
         return
+
+    if armature.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
     
     mask_path = str(srcPath) + "/GearAlphaMask/" + self.mask_type
     mask_shs_path = str(srcPath) + "/GearAlphaMask/" + self.mask_type_shs
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     
     bpy.ops.import_scene.fbx(filepath = path+file)
     
@@ -60,15 +79,12 @@ def import_clt(self):
     if self.cloth_type == "clt":
         # TRANSFORMING
         bpy.ops.transform.resize(value=(4.85 * armature.scale.x, 4.85 * armature.scale.y, 4.85 * armature.scale.z))
-        bpy.ops.rotation_euler = armature.rotation_euler
-        bpy.ops.transform.translate(value=(0, 0.82 * armature.scale.y, 0), orient_axis_ortho='X', orient_type='LOCAL')
+        bpy.ops.transform.translate(value=(0, 0.82 * armature.scale.y, 0), orient_type='LOCAL')
     
         # MASK
         if self.mask_type != "none" and body_mesh != None:
-            bpy.ops.image.open(filepath = mask_path)
-        
             mask_node = body_mesh.active_material.node_tree.nodes.new(type="ShaderNodeTexImage")
-            mask_node.image = bpy.data.images[self.mask_type]
+            mask_node.image = bpy.data.images.load(mask_path, check_existing=True)
             mask_node.image.colorspace_settings.name = 'Non-Color'
             body_mesh.active_material.node_tree.links.new(mask_node.outputs[0], body_mesh.active_material.node_tree.nodes["Group"].inputs[9])
     
@@ -76,16 +92,13 @@ def import_clt(self):
     if self.cloth_type == "shs":
         # TRANSFORMING
         bpy.ops.transform.resize(value=(5.1 * armature.scale.x, 5.1 * armature.scale.y, 5.1 * armature.scale.z))
-        bpy.ops.rotation_euler = armature.rotation_euler
-        bpy.ops.transform.translate(value=(0.097/2, 0.4213, 0.04), orient_axis_ortho='X', orient_type='LOCAL')
+        bpy.ops.transform.translate(value=(0.097/2, 0.4213, 0.04), orient_type='LOCAL')
     
     
         # MASK
         if self.mask_type_shs != "none" and body_mesh != None:
-            bpy.ops.image.open(filepath = mask_shs_path)
-        
             mask_node = body_mesh.active_material.node_tree.nodes.new(type="ShaderNodeTexImage")
-            mask_node.image = bpy.data.images[self.mask_type_shs]
+            mask_node.image = bpy.data.images.load(mask_shs_path, check_existing=True)
             mask_node.image.colorspace_settings.name = 'Non-Color'
             body_mesh.active_material.node_tree.links.new(mask_node.outputs[0], body_mesh.active_material.node_tree.nodes["Group"].inputs[10])
             
@@ -93,12 +106,11 @@ def import_clt(self):
     if self.cloth_type == "head":
         # TRANSFORMING
         bpy.ops.transform.resize(value=(4.85 * armature.scale.x, 4.85 * armature.scale.y, 4.85 * armature.scale.z))
-        bpy.ops.rotation_euler = armature.rotation_euler
-        bpy.ops.transform.translate(value=(0, 1.2523 * armature.scale.y, 0), orient_axis_ortho='X', orient_type='LOCAL')
+        bpy.ops.transform.translate(value=(0, 1.2523 * armature.scale.y, 0), orient_type='LOCAL')
     
     #RIGING
     for child in obj.children:
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         child.select_set(True)
         
         bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
@@ -108,7 +120,7 @@ def import_clt(self):
         
         bpy.ops.object.parent_set(type='ARMATURE')
         
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         child.select_set(True)
         bpy.context.view_layer.objects.active = child
 
@@ -118,53 +130,22 @@ def import_clt(self):
         
         if self.cloth_type == "clt":
             bpy.context.object.location = (armature.location.x, armature.location.y, 0.82 + armature.location.z)
-            bpy.context.object.scale = (0.125*armature.scale.x, 0.125*armature.scale.y, 0.125*armature.scale.z)
+            bpy.context.object.scale = (armature.scale.x, armature.scale.y, armature.scale.z)
         elif self.cloth_type == "shs":
-            bpy.context.object.location = (0.097+armature.location.x, armature.location.y+-0.04, 0.4213 + armature.location.z)
-            bpy.context.object.scale = (0.125*armature.scale.x, 0.125*armature.scale.y, 0.125*armature.scale.z)
+            # Models Resource shoes use the same local bind coordinates as the
+            # Inkling leg bones. Parent them directly in armature space.
+            bpy.context.object.matrix_parent_inverse = Matrix.Identity(4)
+            bpy.context.object.location = (0.097, 0.4213, 0.0)
+            bpy.context.object.rotation_euler = (0.0, 0.0, 0.0)
+            bpy.context.object.scale = (armature.scale.x, armature.scale.y, armature.scale.z)
         elif self.cloth_type == "head":
             bpy.context.object.location = (armature.location.x, armature.location.y, 1.2523 + armature.location.z)
-            bpy.context.object.scale = (0.1195*armature.scale.x, 0.1195*armature.scale.y, 0.1195*armature.scale.z)
+            bpy.context.object.scale = (0.956*armature.scale.x, 0.956*armature.scale.y, 0.956*armature.scale.z)
         
-        bpy.ops.object.modifier_add(type='VERTEX_WEIGHT_MIX')
-        bpy.context.object.modifiers[2].mix_set = 'ALL'
-        bpy.context.object.modifiers[2].mix_mode = 'ADD'
-        bpy.context.object.modifiers[2].vertex_group_a = "arm1_L"
-        bpy.context.object.modifiers[2].vertex_group_b = "arm1sub_L"
-        if bpy.context.object.modifiers["VertexWeightMix"].is_active == False:
-            bpy.ops.object.modifier_apply(modifier="VertexWeightMix", report=True)
-        else:
-            bpy.ops.object.modifier_remove(modifier="VertexWeightMix", report=True)
-        
-        bpy.ops.object.modifier_add(type='VERTEX_WEIGHT_MIX')
-        bpy.context.object.modifiers[2].mix_set = 'ALL'
-        bpy.context.object.modifiers[2].mix_mode = 'ADD'
-        bpy.context.object.modifiers[2].vertex_group_a = "arm1_R"
-        bpy.context.object.modifiers[2].vertex_group_b = "arm1sub_R"
-        if bpy.context.object.modifiers["VertexWeightMix"].is_active == False:
-            bpy.ops.object.modifier_apply(modifier="VertexWeightMix", report=True)
-        else:
-            bpy.ops.object.modifier_remove(modifier="VertexWeightMix", report=True)
-        
-        bpy.ops.object.modifier_add(type='VERTEX_WEIGHT_MIX')
-        bpy.context.object.modifiers[2].mix_set = 'ALL'
-        bpy.context.object.modifiers[2].mix_mode = 'ADD'
-        bpy.context.object.modifiers[2].vertex_group_a = "crotch_L"
-        bpy.context.object.modifiers[2].vertex_group_b = "leg1_L"
-        if bpy.context.object.modifiers["VertexWeightMix"].is_active == False:
-            bpy.ops.object.modifier_apply(modifier="VertexWeightMix", report=True)
-        else:
-            bpy.ops.object.modifier_remove(modifier="VertexWeightMix", report=True)
-        
-        bpy.ops.object.modifier_add(type='VERTEX_WEIGHT_MIX')
-        bpy.context.object.modifiers[2].mix_set = 'ALL'
-        bpy.context.object.modifiers[2].mix_mode = 'ADD'
-        bpy.context.object.modifiers[2].vertex_group_a = "crotch_R"
-        bpy.context.object.modifiers[2].vertex_group_b = "leg1_R"
-        if bpy.context.object.modifiers["VertexWeightMix"].is_active == False:
-            bpy.ops.object.modifier_apply(modifier="VertexWeightMix", report=True)
-        else:
-            bpy.ops.object.modifier_remove(modifier="VertexWeightMix", report=True)
+        merge_vertex_groups_if_present(child, "arm1_L", "arm1sub_L")
+        merge_vertex_groups_if_present(child, "arm1_R", "arm1sub_R")
+        merge_vertex_groups_if_present(child, "crotch_L", "leg1_L")
+        merge_vertex_groups_if_present(child, "crotch_R", "leg1_R")
 
         
         name_list = [
@@ -210,11 +191,13 @@ def import_clt(self):
                     v_groups[n[0]].name = n[1]
         
         
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         child.select_set(True)
         bpy.context.view_layer.objects.active = child
                     
-        bpy.ops.object.modifier_remove(modifier="Armature", report=True)
+        source_armature_modifier = child.modifiers.get("Armature")
+        if source_armature_modifier is not None:
+            bpy.ops.object.modifier_remove(modifier=source_armature_modifier.name, report=True)
         
         # SHADING
         
@@ -229,8 +212,8 @@ def import_clt(self):
         links.new(bsdf.outputs[0], output.inputs[0])
         
         if bpy.context.active_object.active_material.name.lower().endswith("glass"):
-            bsdf.inputs['Transmission'].default_value = 1
-            bsdf.inputs['Transmission Roughness'].default_value = 1
+            bsdf.inputs['Transmission Weight'].default_value = 1
+            bsdf.inputs['Roughness'].default_value = 0.1
             bsdf.inputs['Alpha'].default_value = 0.3
         
         alb_node = None
@@ -251,12 +234,10 @@ def import_clt(self):
             if img_path.lower().startswith(bpy.context.active_object.active_material.name.lower()+"_"):
                 full_path = os.path.join( path, img_path )
                 
-                bpy.ops.image.open(filepath = full_path)
-                        
                 img_node = nodes.new(type="ShaderNodeTexImage")
-                img_node.image = bpy.data.images[img_path]
+                img_node.image = bpy.data.images.load(full_path, check_existing=True)
             
-                if img_path.endswith("tcl.png"):
+                if img_path.lower().endswith("tcl.png"):
                     mix_node = nodes.new(type="ShaderNodeMix")
                     mix_node.data_type = "RGBA"
                     mix_node.inputs[7].default_value = inka_color
@@ -267,9 +248,9 @@ def import_clt(self):
                     
                     if hue_node != None:
                         links.new(hue_node.outputs[0], mix_node.inputs[6])
-                        links.new(mix_node.outputs[2], bsdf.inputs[0])
+                        links.new(mix_node.outputs[2], bsdf.inputs['Base Color'])
                 
-                if img_path.endswith("alb.png"):
+                if img_path.lower().endswith("alb.png"):
                     alb_node = img_node
                     
                     hue_node = nodes.new(type="ShaderNodeHueSaturation")
@@ -278,45 +259,45 @@ def import_clt(self):
                     hue_node.inputs[2].default_value = self.value
                     
                     links.new(img_node.outputs[0], hue_node.inputs[4])
-                    links.new(hue_node.outputs[0], bsdf.inputs[0])
+                    links.new(hue_node.outputs[0], bsdf.inputs['Base Color'])
                     
                     nodes.active = alb_node
                     
                     if mix_node != None:
                         links.new(hue_node.outputs[0], mix_node.inputs[6])
-                        links.new(mix_node.outputs[2], bsdf.inputs[0])
+                        links.new(mix_node.outputs[2], bsdf.inputs['Base Color'])
                             
-                if img_path.endswith("mtl.png"):
+                if img_path.lower().endswith("mtl.png"):
                     img_node.image.colorspace_settings.name = 'Non-Color'
-                    links.new(img_node.outputs[0], bsdf.inputs[6])
+                    links.new(img_node.outputs[0], bsdf.inputs['Metallic'])
                             
-                if img_path.endswith("spc.png"):
+                if img_path.lower().endswith("spc.png"):
                     img_node.image.colorspace_settings.name = 'Non-Color'
-                    links.new(img_node.outputs[0], bsdf.inputs[7])
+                    links.new(img_node.outputs[0], bsdf.inputs['Specular IOR Level'])
                             
-                if img_path.endswith("rgh.png"):
+                if img_path.lower().endswith("rgh.png"):
                     img_node.image.colorspace_settings.name = 'Non-Color'
-                    links.new(img_node.outputs[0], bsdf.inputs[9])
+                    links.new(img_node.outputs[0], bsdf.inputs['Roughness'])
                             
-                if img_path.endswith("emm.png"):
+                if img_path.lower().endswith("emm.png"):
                     img_node.image.colorspace_settings.name = 'Non-Color'
-                    links.new(img_node.outputs[0], bsdf.inputs[20])
+                    links.new(img_node.outputs[0], bsdf.inputs['Emission Color'])
                                 
-                if img_path.endswith("opa.png"):
+                if img_path.lower().endswith("opa.png"):
                     img_node.image.colorspace_settings.name = 'Non-Color'
-                    links.new(img_node.outputs[0], bsdf.inputs[21])
+                    links.new(img_node.outputs[0], bsdf.inputs['Alpha'])
                     
-                if img_path.endswith("alp.png"):
+                if img_path.lower().endswith("alp.png"):
                     img_node.image.colorspace_settings.name = 'Non-Color'
-                    links.new(img_node.outputs[0], bsdf.inputs[21])
+                    links.new(img_node.outputs[0], bsdf.inputs['Alpha'])
             
-                if img_path.endswith("nrm.png"):
+                if img_path.lower().endswith("nrm.png"):
                     nrm_node = nodes.new("ShaderNodeNormalMap")
                     img_node.image.colorspace_settings.name = 'Non-Color'
-                    links.new(nrm_node.outputs[0], bsdf.inputs[22])
+                    links.new(nrm_node.outputs[0], bsdf.inputs['Normal'])
                     links.new(img_node.outputs[0], nrm_node.inputs[1])
                     
-                if img_path.endswith("2cl.png"):
+                if img_path.lower().endswith("2cl.png"):
                     img_node.image.colorspace_settings.name = 'Non-Color'
                     ink_node = img_node
                     
@@ -365,30 +346,23 @@ def import_clt(self):
             links.new(mix_nrm.outputs[0], bsdf.inputs[22])
         
         if self.cloth_type == "shs":
-            # the new object is created with the old object's data, which makes it "linked"
-            new_child = bpy.data.objects.new(child.name+"_R", child.data)
-            
-            bpy.ops.object.make_single_user(object=True, obdata=True, material=False, animation=False, obdata_animation=False)
-            
-            child.name = child.name+"_L"
+            # Shoe exports contain only the left shoe. Make an independent,
+            # mirrored right shoe without context-sensitive edit-mode operators.
+            original_name = child.name
+            child.name = original_name + "_L"
+            new_child = child.copy()
+            new_child.data = child.data.copy()
+            new_child.name = original_name + "_R"
             bpy.context.collection.objects.link(new_child)
-            new_child.scale = child.scale
-            new_child.location = child.location
-            new_child.rotation_euler = child.rotation_euler
-            
-            new_child.scale = (-1 * new_child.scale.x, 1 * new_child.scale.y, 1 * new_child.scale.z)
-            
-            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-            
-            bpy.ops.object.editmode_toggle()
-            bpy.ops.mesh.select_all(action='SELECT')
-            bpy.ops.mesh.normals_make_consistent(inside=False)
-            bpy.ops.object.editmode_toggle()
-            
-            new_child.location[0] = -0.097*armature.scale.x + armature.location.x
-            bpy.ops.object.editmode_toggle()
-            bpy.ops.mesh.remove_doubles(threshold=0.001, use_unselected=True, use_sharp_edge_from_normals=True)
-            bpy.ops.object.editmode_toggle()
+            new_child.data.transform(Matrix.Scale(-1.0, 4, (1.0, 0.0, 0.0)))
+            mirror_mesh = bmesh.new()
+            mirror_mesh.from_mesh(new_child.data)
+            bmesh.ops.reverse_faces(mirror_mesh, faces=mirror_mesh.faces[:])
+            mirror_mesh.to_mesh(new_child.data)
+            mirror_mesh.free()
+            new_child.data.update()
+            new_child.location = (-0.097, 0.4213, 0.0)
+            new_child.rotation_euler = (0.0, 0.0, 0.0)
             
             name_list2 = [
                 ['Leg_2_L', 'Leg_2_R'],
@@ -402,20 +376,22 @@ def import_clt(self):
                     if v_groups2[n[0]] != None:
                         v_groups2[n[0]].name = n[1]
                         
-            bpy.ops.object.select_all(action='DESELECT')
-            new_child.select_set(True)
-            armature.select_set(True)
-            bpy.context.view_layer.objects.active = armature
-            bpy.ops.object.parent_set(type='ARMATURE')
+            new_child.parent = armature
+            new_child.matrix_parent_inverse = Matrix.Identity(4)
+            for modifier in new_child.modifiers:
+                if modifier.type == 'ARMATURE':
+                    modifier.object = armature
 
     
     
-    bpy.ops.object.select_all(action='DESELECT')
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.delete(use_global=False)
+    # Deleting the imported FBX root here can crash Blender 5.2 while its
+    # dependency graph rebuilds the materials edited above. Keep the unused
+    # source root hidden instead; the fitted mesh children were re-parented.
+    obj.name = obj.name + "_SOURCE_UNUSED"
+    obj.hide_render = True
+    obj.hide_set(True)
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     armature.select_set(True)
     bpy.context.view_layer.objects.active = armature
     
@@ -451,8 +427,9 @@ class import_cloth(Operator, ImportHelper):
         items=(
             ('head', 'Head Accessory', 'Hat, Mask, Glasses, Earring, etc'),
             ('clt', 'Body Cloth', 'T-shirt, Jacket, Parka, Sweater, Vest, etc'),
-            ('shs', 'Shooes', 'Boots, Baskets, Sandals, etc')
-        )
+            ('shs', 'Shoes', 'Boots, sneakers, sandals, etc')
+        ),
+        default='clt',
     )
     
     mask_type: EnumProperty(
@@ -499,8 +476,8 @@ class import_cloth(Operator, ImportHelper):
         default='none',
     )
     mask_type_shs: EnumProperty(
-        name="Alpha Mask (Shooes)",
-        description="Choose the mask to hide the skin behind the shooes",
+        name="Alpha Mask (Shoes)",
+        description="Choose the mask to hide the skin behind the shoes",
         items=(
             ('none', "Nothing", "No Mask"),
             ('shs_00_opa.png', "Toe and Bottom", "Mask 00"),

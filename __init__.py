@@ -1,8 +1,8 @@
 bl_info = {
     "name": "Splatoon Tools",
-    "author": "Coconuts XXS",
-    "version": (1, 0),
-    "blender": (2, 80, 0),
+    "author": "Shadorux",
+    "version": (2, 0, 0),
+    "blender": (5, 2, 0),
     "location": "View3D > Add > Mesh > Inkling",
     "description": "Create a procedural Splatoon character in few clicks.",
     "warning": "",
@@ -12,19 +12,23 @@ bl_info = {
 
 import bpy
 import os
+from types import SimpleNamespace
 import bmesh
-from bpy.types import Operator
+from bpy.types import Operator, Panel
 from bpy.props import FloatVectorProperty
 from bpy_extras.object_utils import AddObjectHelper, object_data_add
 from mathutils import Vector
 from bpy_extras.object_utils import AddObjectHelper
-from bpy.utils import resource_path
 from pathlib import Path
+from . import cloth_import, weapon_import, item_import, fast_squid, fast_octopus
 
-USER = Path(resource_path('USER'))
-ADDON = "Splatoon Tools"
+# Resolve bundled scripts and .blend assets relative to this add-on instead of
+# assuming Blender installed it in a folder literally named "Splatoon Tools".
+srcPath = Path(__file__).resolve().parent
 
-srcPath = USER / "scripts" / "addons" / ADDON
+def deselect_all_objects():
+    for obj in bpy.context.view_layer.objects:
+        obj.select_set(False)
 
 def path_iterator(folder_path):
     for fp in os.listdir(folder_path):
@@ -32,7 +36,7 @@ def path_iterator(folder_path):
             yield fp
 
 def import_weapon(armature=None, path="", file="", inkA=(0,0,0)):
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     
     bpy.ops.import_scene.fbx(filepath = path+file)
     
@@ -43,14 +47,14 @@ def import_weapon(armature=None, path="", file="", inkA=(0,0,0)):
     
     #RIGING
     for child in obj.children:
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         bpy.context.view_layer.objects.active = child
         
         bpy.ops.object.editmode_toggle()
         bpy.ops.mesh.remove_doubles(threshold=0.001, use_unselected=True, use_sharp_edge_from_normals=True)
         bpy.ops.object.editmode_toggle()
         
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         child.select_set(True)
         bpy.context.view_layer.objects.active = child
         
@@ -74,10 +78,8 @@ def import_weapon(armature=None, path="", file="", inkA=(0,0,0)):
             if img_path.lower().startswith(bpy.context.active_object.active_material.name.lower()+"_"):
                 full_path = os.path.join( path, img_path )
                 
-                bpy.ops.image.open(filepath = full_path)
-                        
                 img_node = nodes.new(type="ShaderNodeTexImage")
-                img_node.image = bpy.data.images[img_path]
+                img_node.image = bpy.data.images.load(full_path, check_existing=True)
             
                 if img_path.endswith("tcl.png"):
                     mix_node = nodes.new(type="ShaderNodeMix")
@@ -134,13 +136,13 @@ def import_weapon(armature=None, path="", file="", inkA=(0,0,0)):
     if not bsdf.inputs[0].links:
         bsdf.inputs[0].default_value = inka_color
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
 
 
 def import_clt(armature=None, path="", file="", inkA=(0,0,0)):
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     
     bpy.ops.import_scene.fbx(filepath = path+file)
     
@@ -149,11 +151,11 @@ def import_clt(armature=None, path="", file="", inkA=(0,0,0)):
     # TRANSFORMING
     bpy.ops.transform.resize(value=(4.85 * armature.scale.x, 4.85 * armature.scale.y, 4.85 * armature.scale.z))
     bpy.ops.rotation_euler = armature.rotation_euler
-    bpy.ops.transform.translate(value=(0, 0.82 * armature.scale.y, 0), orient_axis_ortho='X', orient_type='LOCAL')
+    bpy.ops.transform.translate(value=(0, 0.82 * armature.scale.y, 0), orient_type='LOCAL')
     
     #RIGING
     for child in obj.children:
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         child.select_set(True)
         
         bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
@@ -163,7 +165,7 @@ def import_clt(armature=None, path="", file="", inkA=(0,0,0)):
         
         bpy.ops.object.parent_set(type='ARMATURE')
         
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         child.select_set(True)
         bpy.context.view_layer.objects.active = child
 
@@ -238,7 +240,7 @@ def import_clt(armature=None, path="", file="", inkA=(0,0,0)):
                     v_groups[n[0]].name = n[1]
         
         
-        bpy.ops.object.select_all(action='DESELECT')
+        deselect_all_objects()
         child.select_set(True)
         bpy.context.view_layer.objects.active = child
                     
@@ -263,10 +265,8 @@ def import_clt(armature=None, path="", file="", inkA=(0,0,0)):
             if img_path.lower().startswith(bpy.context.active_object.active_material.name.lower()+"_"):
                 full_path = os.path.join( path, img_path )
                 
-                bpy.ops.image.open(filepath = full_path)
-                        
                 img_node = nodes.new(type="ShaderNodeTexImage")
-                img_node.image = bpy.data.images[img_path]
+                img_node.image = bpy.data.images.load(full_path, check_existing=True)
             
                 if img_path.endswith("tcl.png"):
                     mix_node = nodes.new(type="ShaderNodeMix")
@@ -319,7 +319,7 @@ def import_clt(armature=None, path="", file="", inkA=(0,0,0)):
                     links.new(img_node.outputs[0], nrm_node.inputs[1])
     
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.delete(use_global=False)
@@ -331,7 +331,7 @@ def create_hair(index=0, armature=None, self=None, type="inkling_F"):
     hair_armature = None
     mesh = None
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     src_path=str(srcPath) + "/" + type + "_hair.blend"
  
     with bpy.data.libraries.load(src_path) as (data_from, data_to):
@@ -345,7 +345,7 @@ def create_hair(index=0, armature=None, self=None, type="inkling_F"):
             else:
                 mesh = obj
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     hair_armature.select_set(True)
     bpy.context.view_layer.objects.active = hair_armature
 
@@ -368,7 +368,7 @@ def create_hair(index=0, armature=None, self=None, type="inkling_F"):
     hair_mat.node_tree.nodes["Group"].inputs[2].default_value = inkb_color
     hair_mat.node_tree.nodes["Group"].inputs[4].default_value = self.hair_emission
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     armature.select_set(True)
     bpy.context.view_layer.objects.active = armature
     
@@ -377,7 +377,7 @@ def create_eyeblow(index=0, armature=None, self=None, type="inkling_F"):
 
     mesh = None
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     src_path=str(srcPath) + "/"+type+"_eyeblow.blend"
  
     with bpy.data.libraries.load(src_path) as (data_from, data_to):
@@ -408,7 +408,7 @@ def create_eyeblow(index=0, armature=None, self=None, type="inkling_F"):
     bpy.context.view_layer.objects.active = armature
     
 def create_bottom(index=0, armature=None, self=None):
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     
     maskIndex = ["00","06","05","02","05","07","08","07","00"]
     
@@ -416,7 +416,7 @@ def create_bottom(index=0, armature=None, self=None):
 
     mesh = None
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     src_path=str(srcPath) + "/bottom_F.blend"
  
     with bpy.data.libraries.load(src_path) as (data_from, data_to):
@@ -427,7 +427,7 @@ def create_bottom(index=0, armature=None, self=None):
             bpy.context.collection.objects.link(obj)
             mesh = obj
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     mesh.select_set(True)
     bpy.context.view_layer.objects.active = armature
 
@@ -436,7 +436,7 @@ def create_bottom(index=0, armature=None, self=None):
     # FIND THE MESH
     for child in armature.children:
         if "Body" in child.name and not "Hif" in child.name:
-            bpy.ops.object.select_all(action='DESELECT')
+            deselect_all_objects()
             child.select_set(True)
             bpy.context.view_layer.objects.active = child
     
@@ -470,7 +470,7 @@ def create_bottom(index=0, armature=None, self=None):
     eyeblow_mat.node_tree.nodes["Group"].inputs[0].default_value = inka_color
     eyeblow_mat.node_tree.nodes["Group"].inputs[2].default_value = inkb_color
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     armature.select_set(True)
     bpy.context.view_layer.objects.active = armature
 
@@ -479,7 +479,7 @@ def create_inkling(self, context, type="inkling_F"):
 
     armature = None
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     src_path=str(srcPath) + "/"+type+"_body.blend"
  
     with bpy.data.libraries.load(src_path) as (data_from, data_to):
@@ -490,7 +490,7 @@ def create_inkling(self, context, type="inkling_F"):
         if obj.type == "ARMATURE":
             armature = obj
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     armature.name = self.name
     bpy.context.view_layer.objects.active = armature
     armature.select_set(True)
@@ -668,6 +668,120 @@ class OBJECT_OT_add_inkling(Operator, AddObjectHelper):
         return {'FINISHED'}
 
 
+def _splatoon_scene_settings(scene):
+    """Build the character settings object used by the legacy creation code."""
+    return SimpleNamespace(
+        type=scene.splatoon_type,
+        name=scene.splatoon_name,
+        ink_A=scene.splatoon_ink_a,
+        ink_B=scene.splatoon_ink_b,
+        skin=scene.splatoon_skin,
+        cloth=scene.splatoon_cloth,
+        eye_contour=scene.splatoon_eye_contour,
+        eyes=scene.splatoon_eyes,
+        eyes_hue=scene.splatoon_eyes_hue,
+        eyes_emission=scene.splatoon_eyes_emission,
+        hair=scene.splatoon_hair,
+        hair_emission=scene.splatoon_hair_emission,
+        eyeblow=scene.splatoon_eyeblow,
+        bottom=scene.splatoon_bottom,
+    )
+
+
+class SPLATOON_OT_create_player(Operator):
+    """Create a player from the persistent Splatoon sidebar settings."""
+    bl_idname = "splatoon.create_player"
+    bl_label = "Create / Update Player"
+    bl_description = "Create a Splatoon player using the settings in this panel"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        settings = _splatoon_scene_settings(context.scene)
+        create_inkling(settings, context, settings.type)
+        return {'FINISHED'}
+
+
+class SPLATOON_PT_player(Panel):
+    """Persistent replacement for Blender's temporary F9 customization panel."""
+    bl_idname = "SPLATOON_PT_player"
+    bl_label = "Splatoon Player"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "Splatoon"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+
+        layout.label(text="Shadorux Splatoon Tools", icon='USER')
+        layout.label(text="Persistent character customization", icon='PINNED')
+
+        player_box = layout.box()
+        player_box.label(text="Player", icon='ARMATURE_DATA')
+        player_box.prop(scene, "splatoon_type", text="Type")
+        player_box.prop(scene, "splatoon_name", text="Name")
+        player_box.operator(SPLATOON_OT_create_player.bl_idname, icon='ADD')
+
+        colors = layout.box()
+        colors.label(text="Colors", icon='COLOR')
+        colors.prop(scene, "splatoon_ink_a", text="Ink A")
+        colors.prop(scene, "splatoon_ink_b", text="Ink B")
+        colors.prop(scene, "splatoon_skin", text="Skin")
+        colors.prop(scene, "splatoon_cloth", text="Cloth")
+        colors.prop(scene, "splatoon_eye_contour", text="Eye Contour")
+
+        appearance = layout.box()
+        appearance.label(text="Appearance", icon='HIDE_OFF')
+        appearance.prop(scene, "splatoon_eyes", text="Eyes")
+        appearance.prop(scene, "splatoon_eyes_hue", text="Eye Hue")
+        appearance.prop(scene, "splatoon_eyes_emission", text="Eye Glow")
+        appearance.prop(scene, "splatoon_hair", text="Hair")
+        appearance.prop(scene, "splatoon_hair_emission", text="Hair Glow")
+        appearance.prop(scene, "splatoon_eyeblow", text="Eyebrow")
+        appearance.prop(scene, "splatoon_bottom", text="Legwear")
+
+        layout.separator()
+        layout.label(text="Maintained by Shadorux", icon='INFO')
+
+
+def _register_scene_properties():
+    scene = bpy.types.Scene
+    scene.splatoon_type = bpy.props.EnumProperty(
+        name="Type and Gender",
+        items=(
+            ('inkling_F', 'Inkling Female', 'An inkling girl'),
+            ('inkling_M', 'Inkling Male', 'An inkling boy'),
+            ('octoling_F', 'Octoling Female', 'An octoling girl'),
+            ('octoling_M', 'Octoling Male', 'An octoling boy'),
+        ),
+        default='inkling_F',
+    )
+    scene.splatoon_name = bpy.props.StringProperty(name="Name", maxlen=50, default="Inkling")
+    scene.splatoon_ink_a = bpy.props.FloatVectorProperty(name="Ink Color", subtype='COLOR', size=3, default=(1, 0, 0), min=0, max=1)
+    scene.splatoon_ink_b = bpy.props.FloatVectorProperty(name="Enemy Ink Color", subtype='COLOR', size=3, default=(0, 1, 1), min=0, max=1)
+    scene.splatoon_skin = bpy.props.FloatVectorProperty(name="Skin Tone", subtype='COLOR', size=3, default=(1, 0.59, 0.5), min=0, max=1)
+    scene.splatoon_cloth = bpy.props.FloatVectorProperty(name="Cloth Color", subtype='COLOR', size=3, default=(0, 0, 0), min=0, max=1)
+    scene.splatoon_eye_contour = bpy.props.FloatVectorProperty(name="Eye Contour", subtype='COLOR', size=3, default=(0, 0, 0), min=0, max=1)
+    scene.splatoon_eyes = bpy.props.IntProperty(name="Eyes", min=1, max=20, default=1)
+    scene.splatoon_eyes_hue = bpy.props.FloatProperty(name="Eyes Hue", min=0, max=1, default=0.5)
+    scene.splatoon_eyes_emission = bpy.props.FloatProperty(name="Eyes Emission", min=0, max=100, default=0)
+    scene.splatoon_hair = bpy.props.IntProperty(name="Hair", min=0, max=15, default=0)
+    scene.splatoon_hair_emission = bpy.props.FloatProperty(name="Hair Emission", min=0, max=100, default=0)
+    scene.splatoon_eyeblow = bpy.props.IntProperty(name="Eyebrow", min=0, max=3, default=0)
+    scene.splatoon_bottom = bpy.props.IntProperty(name="Legwear", min=0, max=8, default=0)
+
+
+def _unregister_scene_properties():
+    for name in (
+        "splatoon_type", "splatoon_name", "splatoon_ink_a", "splatoon_ink_b",
+        "splatoon_skin", "splatoon_cloth", "splatoon_eye_contour", "splatoon_eyes",
+        "splatoon_eyes_hue", "splatoon_eyes_emission", "splatoon_hair",
+        "splatoon_hair_emission", "splatoon_eyeblow", "splatoon_bottom",
+    ):
+        if hasattr(bpy.types.Scene, name):
+            delattr(bpy.types.Scene, name)
+
+
 # Registration
 def add_inkling_button(self, context):
     self.layout.operator(
@@ -677,16 +791,26 @@ def add_inkling_button(self, context):
 
 def register():
     bpy.utils.register_class(OBJECT_OT_add_inkling)
+    bpy.utils.register_class(SPLATOON_OT_create_player)
+    bpy.utils.register_class(SPLATOON_PT_player)
+    _register_scene_properties()
     bpy.types.VIEW3D_MT_mesh_add.append(add_inkling_button)
-    
-    #OTHER SCRIPTS :
-    exec(compile(open(str(srcPath) + "/cloth_import.py").read(), "cloth_import.py", 'exec'))
-    exec(compile(open(str(srcPath) + "/weapon_import.py").read(), "weapon_import.py", 'exec'))
-    exec(compile(open(str(srcPath) + "/item_import.py").read(), "item_import.py", 'exec'))
-    exec(compile(open(str(srcPath) + "/fast_squid.py").read(), "fast_squid.py", 'exec'))
-    exec(compile(open(str(srcPath) + "/fast_octopus.py").read(), "fast_octopus.py", 'exec'))
+    cloth_import.register()
+    weapon_import.register()
+    item_import.register()
+    fast_squid.register()
+    fast_octopus.register()
+
 def unregister():
+    fast_octopus.unregister()
+    fast_squid.unregister()
+    item_import.unregister()
+    weapon_import.unregister()
+    cloth_import.unregister()
     bpy.utils.unregister_class(OBJECT_OT_add_inkling)
+    _unregister_scene_properties()
+    bpy.utils.unregister_class(SPLATOON_PT_player)
+    bpy.utils.unregister_class(SPLATOON_OT_create_player)
     bpy.types.VIEW3D_MT_mesh_add.remove(add_inkling_button)
 
 if __name__ == "__main__":

@@ -18,19 +18,19 @@ from bpy.props import FloatVectorProperty
 from bpy_extras.object_utils import AddObjectHelper, object_data_add
 from mathutils import Vector
 from bpy_extras.object_utils import AddObjectHelper
-from bpy.utils import resource_path
 from pathlib import Path
 
-USER = Path(resource_path('USER'))
-ADDON = "Splatoon Tools"
+srcPath = Path(__file__).resolve().parent
 
-srcPath = USER / "scripts" / "addons" / ADDON
+def deselect_all_objects():
+    for obj in bpy.context.view_layer.objects:
+        obj.select_set(False)
 
 def create_squid(self, context):
 
     armature = None
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     src_path=str(srcPath) + "/octopus.blend"
  
     with bpy.data.libraries.load(src_path) as (data_from, data_to):
@@ -41,7 +41,7 @@ def create_squid(self, context):
         if obj.type == "ARMATURE":
             armature = obj
     
-    bpy.ops.object.select_all(action='DESELECT')
+    deselect_all_objects()
     armature.name = self.name
     bpy.context.view_layer.objects.active = armature
     armature.select_set(True)
