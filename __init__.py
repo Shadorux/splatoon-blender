@@ -765,6 +765,102 @@ def _splatoon_scene_settings(scene):
     )
 
 
+def _set_group_input(obj, group_name, input_name, value):
+    """Set a named shader-group input on every material slot of an object."""
+    if obj is None or obj.type != 'MESH':
+        return
+    for material in obj.data.materials:
+        if not material or not material.node_tree:
+            continue
+        for node in material.node_tree.nodes:
+            if node.type != 'GROUP' or (group_name and node.name != group_name):
+                continue
+            socket = node.inputs.get(input_name)
+            if socket is not None:
+                socket.default_value = value
+
+
+def apply_player_customization(scene):
+    """Apply color and appearance values to the current player in place."""
+    armature = getattr(scene, "splatoon_player_armature", None)
+    if armature is None or armature.name not in bpy.data.objects:
+        return False
+    settings = _splatoon_scene_settings(scene)
+    ink_a = (*settings.ink_A, 1)
+    ink_b = (*settings.ink_B, 1)
+    skin = (*settings.skin, 1)
+    cloth = (*settings.cloth, 1)
+    contour = (*settings.eye_contour, 1)
+
+    for obj in list(armature.children):
+        if obj.type != 'MESH':
+            continue
+        if "Body" in obj.name and "Hif" not in obj.name:
+            _set_group_input(obj, "Group", "Skin", skin)
+            _set_group_input(obj, "Group", "Cloth", cloth)
+            _set_group_input(obj, "Group", "Eye Contour", contour)
+            _set_group_input(obj, "Group", "Ink A", ink_a)
+            _set_group_input(obj, "Group", "Ink B", ink_b)
+            _set_group_input(obj, "Group.002", "Skin", skin)
+            _set_group_input(obj, "Group.002", "Cloth", cloth)
+            _set_group_input(obj, "Group.002", "Eye Contour", contour)
+            _set_group_input(obj, "Group.002", "Ink A", ink_a)
+            _set_group_input(obj, "Group.002", "Ink B", ink_b)
+        elif "Hif Body" in obj.name or "Mouth" in obj.name:
+            _set_group_input(obj, "Group", "Ink A", ink_a)
+        elif "Eyes" in obj.name:
+            for material in obj.data.materials:
+                if not material or not material.node_tree:
+                    continue
+                for node in material.node_tree.nodes:
+                    if node.name == "Group.002":
+                        if node.inputs.get("Eye Index"):
+                            node.inputs["Eye Index"].default_value = float(settings.eyes)
+                        elif len(node.inputs) > 1:
+                            node.inputs[1].default_value = float(settings.eyes)
+                        if node.inputs.get("Hue"):
+                            node.inputs["Hue"].default_value = settings.eyes_hue
+                        elif len(node.inputs) > 2:
+                            node.inputs[2].default_value = settings.eyes_hue
+                        if node.inputs.get("Emission"):
+                            node.inputs["Emission"].default_value = settings.eyes_emission
+                        elif len(node.inputs) > 3:
+                            node.inputs[3].default_value = settings.eyes_emission
+                image = bpy.data.images.load(str(srcPath) + "/Eyes Textures/m_eye_alb." + f"{settings.eyes - 1:02d}" + ".png", check_existing=False)
+                for node in material.node_tree.nodes:
+                    if node.type == 'TEX_IMAGE' and node.image is not None:
+                        node.image = image
+
+    owner = armature.name
+    for obj in bpy.context.scene.objects:
+        if obj.get("splatoon_owner") != owner:
+            continue
+        if obj.type == 'MESH' and obj.name.startswith("Hair"):
+            _set_group_input(obj, "Group", "Ink A", ink_a)
+            _set_group_input(obj, "Group", "Ink B", ink_b)
+            _set_group_input(obj, "Group", "Emission", settings.hair_emission)
+        elif obj.type == 'MESH' and obj.name.startswith("Eyeblow"):
+            _set_group_input(obj, "Group", "Ink A", ink_a)
+            _set_group_input(obj, "Group", "Ink B", ink_b)
+        elif obj.type == 'MESH' and obj.name.startswith("Bottom"):
+            _set_group_input(obj, "Group", "Ink A", ink_a)
+            _set_group_input(obj, "Group", "Ink B", ink_b)
+    return True
+
+
+class SPLATOON_OT_apply_customization(Operator):
+    """Apply color and appearance settings without rebuilding the player."""
+    bl_idname = "splatoon.apply_customization"
+    bl_label = "Apply Customization"
+    bl_description = "Apply colors, eye settings, and glow values to the current player"
+
+    def execute(self, context):
+        if not apply_player_customization(context.scene):
+            self.report({'WARNING'}, "Create a player first")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
 class SPLATOON_OT_create_player(Operator):
     """Create a player from the persistent Splatoon sidebar settings."""
     bl_idname = "splatoon.create_player"
@@ -800,6 +896,7 @@ class SPLATOON_PT_player(Panel):
         player_box.prop(scene, "splatoon_type", text="Type")
         player_box.prop(scene, "splatoon_name", text="Name")
         player_box.operator(SPLATOON_OT_create_player.bl_idname, icon='ADD')
+        player_box.operator(SPLATOON_OT_apply_customization.bl_idname, icon='MATERIAL')
 
         colors = layout.box()
         colors.label(text="Colors", icon='COLOR')
@@ -873,6 +970,7 @@ def add_inkling_button(self, context):
 def register():
     bpy.utils.register_class(OBJECT_OT_add_inkling)
     bpy.utils.register_class(SPLATOON_OT_create_player)
+    bpy.utils.register_class(SPLATOON_OT_apply_customization)
     bpy.utils.register_class(SPLATOON_PT_player)
     _register_scene_properties()
     bpy.types.VIEW3D_MT_mesh_add.append(add_inkling_button)
@@ -891,6 +989,7 @@ def unregister():
     bpy.utils.unregister_class(OBJECT_OT_add_inkling)
     _unregister_scene_properties()
     bpy.utils.unregister_class(SPLATOON_PT_player)
+    bpy.utils.unregister_class(SPLATOON_OT_apply_customization)
     bpy.utils.unregister_class(SPLATOON_OT_create_player)
     bpy.types.VIEW3D_MT_mesh_add.remove(add_inkling_button)
 
