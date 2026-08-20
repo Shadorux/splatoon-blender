@@ -28,7 +28,73 @@ srcPath = Path(__file__).resolve().parent
 
 def deselect_all_objects():
     for obj in bpy.context.view_layer.objects:
-        obj.select_set(False)
+        if obj is not None:
+            obj.select_set(False)
+
+
+_GEAR_PREFIXES = ("Clt_", "Shs_", "Wmn_", "Head_", "Item_")
+
+
+def _is_gear_object(obj):
+    """Keep imported clothing, shoes and weapons when replacing a player."""
+    return obj.name.startswith(_GEAR_PREFIXES)
+
+
+def remove_existing_player(scene):
+    """Remove the generated player owned by the persistent sidebar.
+
+    The original operator leaves every linked body and hair object in the
+    scene.  This uses a scene pointer for new files and a name/constraint
+    fallback for files made by older versions, while leaving imported gear
+    objects (Clt_, Shs_, Wmn_) alone.
+    """
+    old_armature = getattr(scene, "splatoon_player_armature", None)
+    if old_armature is None or old_armature.name not in bpy.data.objects:
+        old_armature = None
+        wanted = str(getattr(scene, "splatoon_name", "Inkling"))
+        candidates = [obj for obj in bpy.data.objects if obj.type == 'ARMATURE']
+        named = [obj for obj in candidates if obj.name == wanted or obj.name.startswith(wanted + ".")]
+        tagged = [obj for obj in candidates if obj.get("splatoon_generated")]
+        if named:
+            old_armature = sorted(named, key=lambda obj: obj.name)[-1]
+        elif tagged:
+            old_armature = tagged[-1]
+
+    if old_armature is None:
+        return
+
+    to_remove = set()
+
+    def collect_children(obj):
+        for child in list(obj.children):
+            if _is_gear_object(child):
+                continue
+            to_remove.add(child)
+            collect_children(child)
+
+    to_remove.add(old_armature)
+    collect_children(old_armature)
+
+    # Hair armatures are constrained to the body but are not parented to it.
+    for obj in list(bpy.data.objects):
+        if obj in to_remove or obj.type != 'ARMATURE':
+            continue
+        owns_old = obj.get("splatoon_owner") == old_armature.name
+        constrained = any(
+            getattr(con, "target", None) == old_armature
+            for bone in obj.pose.bones
+            for con in bone.constraints
+        )
+        if owns_old or constrained or obj.name.startswith("Hair "):
+            if owns_old or constrained:
+                to_remove.add(obj)
+                collect_children(obj)
+
+    for obj in list(to_remove):
+        if obj.name in bpy.data.objects and not _is_gear_object(obj):
+            bpy.data.objects.remove(obj, do_unlink=True)
+    if hasattr(scene, "splatoon_player_armature"):
+        scene.splatoon_player_armature = None
 
 def path_iterator(folder_path):
     for fp in os.listdir(folder_path):
@@ -340,6 +406,8 @@ def create_hair(index=0, armature=None, self=None, type="inkling_F"):
     for obj in data_to.objects:
         if obj.name.startswith("Hair "+"{:02d}".format(index)):
             bpy.context.collection.objects.link(obj)
+            obj["splatoon_generated"] = True
+            obj["splatoon_owner"] = armature.name
             if obj.type == "ARMATURE":
                 hair_armature = obj
             else:
@@ -386,6 +454,8 @@ def create_eyeblow(index=0, armature=None, self=None, type="inkling_F"):
     for obj in data_to.objects:
         if obj.name.lower().startswith("eyeblow "+str(index)):
             bpy.context.collection.objects.link(obj)
+            obj["splatoon_generated"] = True
+            obj["splatoon_owner"] = armature.name
             mesh = obj
 
     bpy.context.view_layer.objects.active = armature
@@ -425,6 +495,8 @@ def create_bottom(index=0, armature=None, self=None):
     for obj in data_to.objects:
         if obj.name.startswith("Bottom "+str(index)):
             bpy.context.collection.objects.link(obj)
+            obj["splatoon_generated"] = True
+            obj["splatoon_owner"] = armature.name
             mesh = obj
     
     deselect_all_objects()
@@ -492,7 +564,12 @@ def create_inkling(self, context, type="inkling_F"):
     
     deselect_all_objects()
     armature.name = self.name
+    armature["splatoon_generated"] = True
+    armature["splatoon_character_type"] = type
     bpy.context.view_layer.objects.active = armature
+    for child in list(armature.children):
+        child["splatoon_generated"] = True
+        child["splatoon_owner"] = armature.name
     armature.select_set(True)
 
     # MATERIALS
@@ -697,7 +774,9 @@ class SPLATOON_OT_create_player(Operator):
 
     def execute(self, context):
         settings = _splatoon_scene_settings(context.scene)
+        remove_existing_player(context.scene)
         create_inkling(settings, context, settings.type)
+        context.scene.splatoon_player_armature = bpy.context.view_layer.objects.active
         return {'FINISHED'}
 
 
@@ -769,6 +848,7 @@ def _register_scene_properties():
     scene.splatoon_hair_emission = bpy.props.FloatProperty(name="Hair Emission", min=0, max=100, default=0)
     scene.splatoon_eyeblow = bpy.props.IntProperty(name="Eyebrow", min=0, max=3, default=0)
     scene.splatoon_bottom = bpy.props.IntProperty(name="Legwear", min=0, max=8, default=0)
+    scene.splatoon_player_armature = bpy.props.PointerProperty(name="Generated Player", type=bpy.types.Object)
 
 
 def _unregister_scene_properties():
@@ -777,6 +857,7 @@ def _unregister_scene_properties():
         "splatoon_skin", "splatoon_cloth", "splatoon_eye_contour", "splatoon_eyes",
         "splatoon_eyes_hue", "splatoon_eyes_emission", "splatoon_hair",
         "splatoon_hair_emission", "splatoon_eyeblow", "splatoon_bottom",
+        "splatoon_player_armature",
     ):
         if hasattr(bpy.types.Scene, name):
             delattr(bpy.types.Scene, name)
