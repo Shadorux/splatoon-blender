@@ -366,6 +366,7 @@ def import_clt(self):
             
             name_list2 = [
                 ['Leg_2_L', 'Leg_2_R'],
+                ['Ankle_Assist_L', 'Ankle_Assist_R'],
                 ['Ankle_L', 'Ankle_R'],
                 ['Toe_L', 'Toe_R']
             ]

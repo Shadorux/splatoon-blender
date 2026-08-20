@@ -1,4 +1,4 @@
-Splatoon Tools 2.0.0 - Blender 5.2 compatibility build
+Splatoon Tools 2.0.1 - Blender 5.2 compatibility build
 
 MAINTAINER / DISCLAIMER
 This maintained update is by Shadorux. The original project is Coconuts XXS'
@@ -34,3 +34,4 @@ NOTABLE FIXES
 - Correct Blender 5.2 scaling for characters, clothing, items, and weapons.
 - Stable cloth cleanup that avoids the native dependency-graph crash.
 - Correct shoe mirroring and Inkling-armature placement.
+- Correct mirrored ankle-assist weights when posing Punk Whites shoes.

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Splatoon Tools",
     "author": "Shadorux",
-    "version": (2, 0, 0),
+    "version": (2, 0, 1),
     "blender": (5, 2, 0),
     "location": "View3D > Add > Mesh > Inkling",
     "description": "Create a procedural Splatoon character in few clicks.",
