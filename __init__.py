@@ -401,6 +401,17 @@ def create_hair(index=0, armature=None, self=None, type="inkling_F"):
     src_path=str(srcPath) + "/" + type + "_hair.blend"
  
     with bpy.data.libraries.load(src_path) as (data_from, data_to):
+        available = sorted({
+            int(name.split()[1].split('_')[0])
+            for name in data_from.objects
+            if name.startswith("Hair ") and name.split()[1].split('_')[0].isdigit()
+        })
+        if not available:
+            return
+        if index not in available:
+            # Octoling assets currently contain indices 0-7, while Inkling
+            # assets contain 0-15.  Clamp old/global UI values safely.
+            index = min(available, key=lambda value: abs(value - index))
         data_to.objects = data_from.objects
  
     for obj in data_to.objects:
@@ -413,6 +424,13 @@ def create_hair(index=0, armature=None, self=None, type="inkling_F"):
             else:
                 mesh = obj
     
+    if hair_armature is None or mesh is None:
+        if armature is not None:
+            deselect_all_objects()
+            armature.select_set(True)
+            bpy.context.view_layer.objects.active = armature
+        return
+
     deselect_all_objects()
     hair_armature.select_set(True)
     bpy.context.view_layer.objects.active = hair_armature
