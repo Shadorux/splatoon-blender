@@ -24,8 +24,7 @@ USE
 
 MODEL FILES
 - Keep each FBX beside its PNG texture files.
-- Blender 5.2 cannot import Collada .dae files. Convert those models to FBX
-  first; a converted Punk Whites FBX is supplied separately with this build.
+- Blender 5.2 cannot import Collada .dae files. Convert those models to FB
 
 NOTABLE FIXES
 - Blender 5.2-safe module registration and package-relative asset paths.
@@ -33,5 +32,4 @@ NOTABLE FIXES
 - Context-safe selection, object-mode handling, and import cleanup.
 - Correct Blender 5.2 scaling for characters, clothing, items, and weapons.
 - Stable cloth cleanup that avoids the native dependency-graph crash.
-- Correct shoe mirroring and Inkling-armature placement.
-- Correct mirrored ankle-assist weights when posing Punk Whites shoes.
+- Correct shoe mirroring and Inkling-armature placement
